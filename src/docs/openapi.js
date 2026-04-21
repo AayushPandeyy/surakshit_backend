@@ -1,5 +1,5 @@
-const serverUrl =
-  process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3000}`;
+const productionServerUrl = "https://surakshit-backend-nj42.onrender.com";
+const localServerUrl = `http://localhost:${process.env.PORT || 3000}`;
 
 const openApiSpec = {
   openapi: "3.0.3",
@@ -10,8 +10,12 @@ const openApiSpec = {
   },
   servers: [
     {
-      url: serverUrl,
-      description: "Current environment",
+      url: productionServerUrl,
+      description: "Production (Render)",
+    },
+    {
+      url: localServerUrl,
+      description: "Local development",
     },
   ],
   tags: [
