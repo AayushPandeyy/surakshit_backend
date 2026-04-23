@@ -21,6 +21,7 @@ const openApiSpec = {
   tags: [
     { name: "System", description: "System health and diagnostics" },
     { name: "Auth", description: "Authentication endpoints" },
+    { name: "Modules", description: "Nested module management endpoints" },
   ],
   paths: {
     "/health": {
@@ -172,7 +173,7 @@ const openApiSpec = {
             content: {
               "application/json": {
                 schema: {
-                  $ref: "#/components/schemas/AuthSuccessResponse",
+                  $ref: "#/components/schemas/LoginSuccessResponse",
                 },
               },
             },
@@ -213,8 +214,488 @@ const openApiSpec = {
         },
       },
     },
+    "/auth/user-info": {
+      get: {
+        tags: ["Auth"],
+        summary: "Get current user information",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "User info fetched",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UserInfoResponse",
+                },
+              },
+            },
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+          404: {
+            description: "User not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "User not found",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/auth/init": {
+      get: {
+        tags: ["Auth"],
+        summary: "Get init payload with user and modules",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Init payload fetched",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/InitResponse",
+                },
+              },
+            },
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+          404: {
+            description: "User not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "User not found",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+    },
+    "/modules": {
+      post: {
+        tags: ["Modules"],
+        summary: "Create a module tree",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ModuleCreateRequest",
+              },
+              example: {
+                name: "User Management",
+                icon: "User",
+                path: null,
+                code: "UM",
+                moduleList: [
+                  {
+                    name: "Staff Management",
+                    icon: "UsersRound",
+                    path: "/staff-management",
+                    code: "SM",
+                    moduleList: [],
+                  },
+                  {
+                    name: "Role Management",
+                    icon: "UserRoundPen",
+                    path: "/role-management",
+                    code: "RM",
+                    moduleList: [],
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Module created",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    message: {
+                      type: "string",
+                      example: "Module created successfully",
+                    },
+                    module: {
+                      $ref: "#/components/schemas/Module",
+                    },
+                  },
+                  required: ["message", "module"],
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ValidationErrorResponse",
+                },
+              },
+            },
+          },
+          409: {
+            description: "Duplicate module code",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "A module with this code already exists",
+                },
+              },
+            },
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
+      get: {
+        tags: ["Modules"],
+        summary: "Get all modules as tree",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Modules fetched",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    message: {
+                      type: "string",
+                      example: "Modules fetched successfully",
+                    },
+                    modules: {
+                      type: "array",
+                      items: {
+                        $ref: "#/components/schemas/Module",
+                      },
+                    },
+                  },
+                  required: ["message", "modules"],
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/modules/{id}": {
+      get: {
+        tags: ["Modules"],
+        summary: "Get module tree by root id",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Module fetched",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    message: {
+                      type: "string",
+                      example: "Module fetched successfully",
+                    },
+                    module: {
+                      $ref: "#/components/schemas/Module",
+                    },
+                  },
+                  required: ["message", "module"],
+                },
+              },
+            },
+          },
+          400: {
+            description: "Invalid id",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          404: {
+            description: "Module not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+        },
+      },
+      put: {
+        tags: ["Modules"],
+        summary: "Replace module tree by root id",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ModuleCreateRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Module updated",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    message: {
+                      type: "string",
+                      example: "Module updated successfully",
+                    },
+                    module: {
+                      $ref: "#/components/schemas/Module",
+                    },
+                  },
+                  required: ["message", "module"],
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed or invalid id",
+            content: {
+              "application/json": {
+                schema: {
+                  oneOf: [
+                    { $ref: "#/components/schemas/ValidationErrorResponse" },
+                    { $ref: "#/components/schemas/MessageResponse" },
+                  ],
+                },
+              },
+            },
+          },
+          404: {
+            description: "Module not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          409: {
+            description: "Duplicate module code",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+        },
+      },
+      delete: {
+        tags: ["Modules"],
+        summary: "Delete module by id",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer", minimum: 1 },
+          },
+        ],
+        responses: {
+          200: {
+            description: "Module deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Module deleted successfully",
+                },
+              },
+            },
+          },
+          400: {
+            description: "Invalid id",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          404: {
+            description: "Module not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+      },
+    },
     schemas: {
       RegisterRequest: {
         type: "object",
@@ -279,6 +760,65 @@ const openApiSpec = {
           },
         },
       },
+      ModuleCreateRequest: {
+        type: "object",
+        required: ["name", "icon", "path", "code", "moduleList"],
+        properties: {
+          name: {
+            type: "string",
+            minLength: 1,
+            maxLength: 120,
+            example: "User Management",
+          },
+          icon: {
+            type: "string",
+            minLength: 1,
+            maxLength: 80,
+            example: "User",
+          },
+          path: {
+            type: "string",
+            nullable: true,
+            maxLength: 255,
+            example: null,
+          },
+          code: {
+            type: "string",
+            minLength: 1,
+            maxLength: 30,
+            pattern: "^[A-Z0-9_]+$",
+            example: "UM",
+          },
+          moduleList: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/ModuleCreateRequest",
+            },
+            example: [],
+          },
+        },
+      },
+      Module: {
+        type: "object",
+        required: ["id", "name", "icon", "path", "code", "moduleList"],
+        properties: {
+          id: { type: "integer", example: 1 },
+          name: { type: "string", example: "User Management" },
+          icon: { type: "string", example: "User" },
+          path: {
+            type: "string",
+            nullable: true,
+            example: null,
+          },
+          code: { type: "string", example: "UM" },
+          moduleList: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Module",
+            },
+          },
+        },
+      },
       User: {
         type: "object",
         properties: {
@@ -323,7 +863,7 @@ const openApiSpec = {
             type: "string",
             example: "Login successful",
           },
-          token: {
+          accessToken: {
             type: "string",
             description: "JWT access token",
             example:
@@ -333,7 +873,90 @@ const openApiSpec = {
             $ref: "#/components/schemas/User",
           },
         },
-        required: ["message", "token", "user"],
+        required: ["message", "accessToken", "user"],
+      },
+      LoginSuccessResponse: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            example: "Login successful",
+          },
+          accessToken: {
+            type: "string",
+            description: "JWT access token",
+            example:
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.access.payload.signature",
+          },
+          refreshToken: {
+            type: "string",
+            description: "JWT refresh token",
+            example:
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.refresh.payload.signature",
+          },
+        },
+        required: ["message", "accessToken", "refreshToken"],
+      },
+      UserInfoResponse: {
+        type: "object",
+        properties: {
+          name: { type: "string", example: "Test User" },
+          email: {
+            type: "string",
+            format: "email",
+            example: "test.user@example.com",
+          },
+          dob: {
+            type: "string",
+            format: "date",
+            example: "1998-05-15",
+          },
+          phoneNumber: {
+            type: "string",
+            example: "+919876543210",
+          },
+          panNumber: {
+            type: "string",
+            nullable: true,
+            example: "ABCDE1234F",
+          },
+          locale: {
+            type: "string",
+            enum: ["en", "np"],
+            example: "en",
+          },
+          plan: {
+            type: "string",
+            enum: ["FREE", "PREMIUM"],
+            example: "FREE",
+          },
+        },
+        required: [
+          "name",
+          "email",
+          "dob",
+          "phoneNumber",
+          "panNumber",
+          "locale",
+          "plan",
+        ],
+      },
+      InitResponse: {
+        type: "object",
+        properties: {
+          statuscode: { type: "integer", example: 200 },
+          message: { type: "string", example: "Initialization successful" },
+          userDataa: {
+            $ref: "#/components/schemas/UserInfoResponse",
+          },
+          moduleList: {
+            type: "array",
+            items: {
+              $ref: "#/components/schemas/Module",
+            },
+          },
+        },
+        required: ["statuscode", "message", "userDataa", "moduleList"],
       },
       ValidationErrorResponse: {
         type: "object",

@@ -3,12 +3,14 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const db = require("../db");
+const requireAuth = require("../middleware/require-auth");
 
 const router = express.Router();
 const ALLOWED_PLANS = new Set(["FREE", "PREMIUM"]);
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "15m";
+const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || "7d";
 const configuredRounds = Number(process.env.BCRYPT_ROUNDS || 12);
 const BCRYPT_ROUNDS =
   Number.isInteger(configuredRounds) &&
@@ -211,6 +213,85 @@ function signAccessToken(user) {
   );
 }
 
+function signRefreshToken(user) {
+  return jwt.sign(
+    {
+      sub: String(user.id),
+      type: "refresh",
+    },
+    JWT_SECRET,
+    {
+      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+      issuer: "surakshit_backend",
+      audience: "surakshit_client",
+    },
+  );
+}
+
+function buildModuleTree(rows) {
+  const nodeMap = new Map();
+  const roots = [];
+
+  for (const row of rows) {
+    nodeMap.set(row.id, {
+      id: row.id,
+      name: row.name,
+      icon: row.icon,
+      path: row.path,
+      code: row.code,
+      moduleList: [],
+      _parentId: row.parent_id,
+      _sortOrder: row.sort_order,
+    });
+  }
+
+  for (const node of nodeMap.values()) {
+    if (node._parentId && nodeMap.has(node._parentId)) {
+      nodeMap.get(node._parentId).moduleList.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  function sortAndStrip(items) {
+    items.sort((a, b) => a._sortOrder - b._sortOrder || a.id - b.id);
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      icon: item.icon,
+      path: item.path,
+      code: item.code,
+      moduleList: sortAndStrip(item.moduleList),
+    }));
+  }
+
+  return sortAndStrip(roots);
+}
+
+function isFamilyModule(moduleItem) {
+  const normalizedName = String(moduleItem.name || "")
+    .trim()
+    .toLowerCase();
+  const normalizedCode = String(moduleItem.code || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    normalizedName === "family" ||
+    normalizedCode === "FAMILY" ||
+    normalizedCode === "FM"
+  );
+}
+
+function filterFamilyModules(moduleList) {
+  return moduleList
+    .filter((moduleItem) => !isFamilyModule(moduleItem))
+    .map((moduleItem) => ({
+      ...moduleItem,
+      moduleList: filterFamilyModules(moduleItem.moduleList || []),
+    }));
+}
+
 router.post("/register", async (req, res, next) => {
   try {
     const errors = validateRegisterPayload(req.body || {});
@@ -236,11 +317,11 @@ router.post("/register", async (req, res, next) => {
     );
 
     const createdUser = result.rows[0];
-    const token = signAccessToken(createdUser);
+    const accessToken = signAccessToken(createdUser);
 
     return res.status(201).json({
       message: "Registration successful",
-      token,
+      accessToken,
       user: createdUser,
     });
   } catch (error) {
@@ -290,20 +371,120 @@ router.post("/login", async (req, res, next) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const token = signAccessToken(existingUser);
+    const accessToken = signAccessToken(existingUser);
+    const refreshToken = signRefreshToken(existingUser);
 
     return res.status(200).json({
       message: "Login successful",
-      token,
-      user: {
-        id: existingUser.id,
-        fullname: existingUser.fullname,
-        email: existingUser.email,
-        phonenumber: existingUser.phonenumber,
-        dateofbirth: existingUser.dateofbirth,
-        plan: existingUser.plan,
-        created_at: existingUser.created_at,
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/user-info", requireAuth, async (req, res, next) => {
+  try {
+    const userId = Number(req.auth.userId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const result = await db.query(
+      `
+        SELECT
+          fullname,
+          email,
+          dateofbirth,
+          phonenumber,
+          pan_number,
+          locale,
+          plan
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [userId],
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      name: user.fullname,
+      email: user.email,
+      dob: user.dateofbirth,
+      phoneNumber: user.phonenumber,
+      panNumber: user.pan_number,
+      locale: user.locale,
+      plan: user.plan,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/init", requireAuth, async (req, res, next) => {
+  try {
+    const userId = Number(req.auth.userId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const userResult = await db.query(
+      `
+        SELECT
+          fullname,
+          email,
+          dateofbirth,
+          phonenumber,
+          pan_number,
+          locale,
+          plan
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [userId],
+    );
+
+    const user = userResult.rows[0];
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const modulesResult = await db.query(
+      `
+        SELECT id, name, icon, path, code, parent_id, sort_order
+        FROM modules
+        ORDER BY COALESCE(parent_id, 0), sort_order, id
+      `,
+    );
+
+    const allModules = buildModuleTree(modulesResult.rows);
+    const moduleList =
+      user.plan === "FREE" ? filterFamilyModules(allModules) : allModules;
+
+    return res.status(200).json({
+      statuscode: 200,
+      message: "Initialization successful",
+      userDataa: {
+        name: user.fullname,
+        email: user.email,
+        dob: user.dateofbirth,
+        phoneNumber: user.phonenumber,
+        panNumber: user.pan_number,
+        locale: user.locale,
+        plan: user.plan,
       },
+      moduleList,
     });
   } catch (error) {
     return next(error);

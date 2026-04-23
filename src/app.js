@@ -5,6 +5,8 @@ const rateLimit = require("express-rate-limit");
 const swaggerUi = require("swagger-ui-express");
 const db = require("./db");
 const authRouter = require("./routes/auth");
+const modulesRouter = require("./routes/modules");
+const requireAuth = require("./middleware/require-auth");
 const openApiSpec = require("./docs/openapi");
 
 const app = express();
@@ -33,6 +35,7 @@ app.use(appLimiter);
 app.use(express.json({ limit: "10kb" }));
 
 app.use("/auth", authRouter);
+app.use("/modules", requireAuth, modulesRouter);
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 app.get("/openapi.json", (_req, res) => {
   res.status(200).json(openApiSpec);
