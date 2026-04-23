@@ -45,6 +45,10 @@ function normalizePhone(phoneNumber) {
   return phoneNumber.trim().replace(/[\s-]/g, "");
 }
 
+function normalizePanNumber(panNumber) {
+  return panNumber.trim().toUpperCase();
+}
+
 function normalizePlan(plan) {
   if (typeof plan !== "string") {
     return "FREE";
@@ -193,6 +197,104 @@ function validateLoginPayload(payload) {
 
   if (payload.password.length < 1 || payload.password.length > 128) {
     errors.push("password length is invalid");
+  }
+
+  return errors;
+}
+
+function validateUserInfoPatchPayload(payload) {
+  const errors = [];
+
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return ["request body must be a JSON object"];
+  }
+
+  const allowedFields = new Set([
+    "name",
+    "email",
+    "dob",
+    "phoneNumber",
+    "panNumber",
+    "locale",
+  ]);
+
+  const providedFields = Object.keys(payload);
+
+  if (providedFields.length === 0) {
+    errors.push("at least one field is required");
+  }
+
+  for (const field of providedFields) {
+    if (!allowedFields.has(field)) {
+      errors.push(`${field} is not allowed`);
+    }
+  }
+
+  if (payload.name !== undefined) {
+    if (typeof payload.name !== "string") {
+      errors.push("name must be a string");
+    } else {
+      const normalizedName = normalizeFullName(payload.name);
+      if (normalizedName.length < 2 || normalizedName.length > 120) {
+        errors.push("name must be between 2 and 120 characters");
+      }
+    }
+  }
+
+  if (payload.email !== undefined) {
+    if (typeof payload.email !== "string") {
+      errors.push("email must be a string");
+    } else if (!isValidEmail(normalizeEmail(payload.email))) {
+      errors.push("email format is invalid");
+    }
+  }
+
+  if (payload.dob !== undefined) {
+    if (typeof payload.dob !== "string") {
+      errors.push("dob must be a string in YYYY-MM-DD format");
+    } else {
+      const dateOfBirth = new Date(payload.dob);
+      const isDateValid = !Number.isNaN(dateOfBirth.getTime());
+
+      if (!isDateValid) {
+        errors.push("dob must be a valid date in YYYY-MM-DD format");
+      } else {
+        const age = getAgeFromDate(payload.dob);
+        if (age < 13 || age > 120) {
+          errors.push("dob is invalid or age is out of allowed range");
+        }
+      }
+    }
+  }
+
+  if (payload.phoneNumber !== undefined) {
+    if (typeof payload.phoneNumber !== "string") {
+      errors.push("phoneNumber must be a string");
+    } else if (!isValidPhone(normalizePhone(payload.phoneNumber))) {
+      errors.push("phoneNumber format is invalid");
+    }
+  }
+
+  if (payload.panNumber !== undefined) {
+    const isNull = payload.panNumber === null;
+    if (!isNull && typeof payload.panNumber !== "string") {
+      errors.push("panNumber must be a string or null");
+    } else if (typeof payload.panNumber === "string") {
+      const normalizedPanNumber = normalizePanNumber(payload.panNumber);
+      if (normalizedPanNumber.length < 5 || normalizedPanNumber.length > 20) {
+        errors.push("panNumber must be between 5 and 20 characters");
+      }
+    }
+  }
+
+  if (payload.locale !== undefined) {
+    if (payload.locale !== "en" && payload.locale !== "np") {
+      errors.push("locale must be either en or np");
+    }
   }
 
   return errors;
@@ -425,6 +527,104 @@ router.get("/user-info", requireAuth, async (req, res, next) => {
       plan: user.plan,
     });
   } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch("/user-info", requireAuth, async (req, res, next) => {
+  try {
+    const userId = Number(req.auth.userId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const errors = validateUserInfoPatchPayload(req.body || {});
+    if (errors.length > 0) {
+      return res.status(400).json({ message: "Validation failed", errors });
+    }
+
+    const existingResult = await db.query(
+      `
+        SELECT fullname, email, dateofbirth, phonenumber, pan_number, locale, plan
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [userId],
+    );
+
+    const existingUser = existingResult.rows[0];
+
+    if (!existingUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const nextName =
+      req.body.name !== undefined
+        ? normalizeFullName(req.body.name)
+        : existingUser.fullname;
+    const nextEmail =
+      req.body.email !== undefined
+        ? normalizeEmail(req.body.email)
+        : existingUser.email;
+    const nextDob =
+      req.body.dob !== undefined ? req.body.dob : existingUser.dateofbirth;
+    const nextPhoneNumber =
+      req.body.phoneNumber !== undefined
+        ? normalizePhone(req.body.phoneNumber)
+        : existingUser.phonenumber;
+    const nextPanNumber =
+      req.body.panNumber !== undefined
+        ? req.body.panNumber === null
+          ? null
+          : normalizePanNumber(req.body.panNumber)
+        : existingUser.pan_number;
+    const nextLocale =
+      req.body.locale !== undefined ? req.body.locale : existingUser.locale;
+
+    const result = await db.query(
+      `
+        UPDATE users
+        SET fullname = $1,
+            email = $2,
+            dateofbirth = $3,
+            phonenumber = $4,
+            pan_number = $5,
+            locale = $6,
+            updated_at = NOW()
+        WHERE id = $7
+        RETURNING fullname, email, dateofbirth, phonenumber, pan_number, locale, plan
+      `,
+      [
+        nextName,
+        nextEmail,
+        nextDob,
+        nextPhoneNumber,
+        nextPanNumber,
+        nextLocale,
+        userId,
+      ],
+    );
+
+    const updatedUser = result.rows[0];
+
+    return res.status(200).json({
+      name: updatedUser.fullname,
+      email: updatedUser.email,
+      dob: updatedUser.dateofbirth,
+      phoneNumber: updatedUser.phonenumber,
+      panNumber: updatedUser.pan_number,
+      locale: updatedUser.locale,
+      plan: updatedUser.plan,
+    });
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({
+        message: "Email, phoneNumber, or panNumber already exists",
+      });
+    }
+
     return next(error);
   }
 });

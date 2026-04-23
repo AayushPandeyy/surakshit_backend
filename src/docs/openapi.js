@@ -261,6 +261,90 @@ const openApiSpec = {
           },
         },
       },
+      patch: {
+        tags: ["Auth"],
+        summary: "Update current user information",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/UserInfoPatchRequest",
+              },
+              example: {
+                name: "Updated User",
+                phoneNumber: "+919800000000",
+                locale: "np",
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "User info updated",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UserInfoResponse",
+                },
+              },
+            },
+          },
+          400: {
+            description: "Validation failed",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ValidationErrorResponse",
+                },
+              },
+            },
+          },
+          401: {
+            description: "Unauthorized",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Invalid or expired token",
+                },
+              },
+            },
+          },
+          404: {
+            description: "User not found",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "User not found",
+                },
+              },
+            },
+          },
+          409: {
+            description: "Duplicate email, phoneNumber, or panNumber",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/MessageResponse",
+                },
+                example: {
+                  message: "Email, phoneNumber, or panNumber already exists",
+                },
+              },
+            },
+          },
+          500: {
+            $ref: "#/components/responses/InternalServerError",
+          },
+        },
+      },
     },
     "/auth/init": {
       get: {
@@ -940,6 +1024,41 @@ const openApiSpec = {
           "locale",
           "plan",
         ],
+      },
+      UserInfoPatchRequest: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            minLength: 2,
+            maxLength: 120,
+            example: "Updated User",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            example: "updated.user@example.com",
+          },
+          dob: {
+            type: "string",
+            format: "date",
+            example: "1999-01-01",
+          },
+          phoneNumber: {
+            type: "string",
+            example: "+919800000000",
+          },
+          panNumber: {
+            type: "string",
+            nullable: true,
+            example: "ABCDE1234F",
+          },
+          locale: {
+            type: "string",
+            enum: ["en", "np"],
+            example: "np",
+          },
+        },
       },
       InitResponse: {
         type: "object",
